@@ -13,7 +13,7 @@ I created this repo because:
   between opening and closing angle brackets (`<` and `>`) have also been stripped,
   which means critical code for traits is missing.
 
-## Building and Running the Code
+## Building the Code
 
 I built and ran this code on Ubuntu 18.04.1 with LLVM 7
 (the setup steps I went through to get the LLVM libraries are included as part
@@ -85,6 +85,8 @@ kprobe__sys_clone:
       12:	b7 00 00 00 00 00 00 00 	r0 = 0
       13:	95 00 00 00 00 00 00 00 	exit
 ```
+
+## Running the Code
 
 I was hoping to extract the BPF bytecode from `hello.o` and use it to create
 a standalone C program that loads the BPF program. My attempt lives in
