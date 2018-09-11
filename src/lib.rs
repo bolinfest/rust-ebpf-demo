@@ -13,6 +13,10 @@ pub static _version: u32 = 0xFFFFFFFE;
 #[allow(non_snake_case)]
 pub extern "C" fn kprobe__sys_clone(_ctx: *mut u8) -> i32 {
   let BPF_FUNC_trace_printk = unsafe {
+    // ::std::os::raw::c_char seems more appropriate than u8,
+    // but converting msg using CStr::from_bytes_with_nul() seems to
+    // mess things up. Perhaps CString::from_vec_unchecked() could
+    // be used with as_ptr() to achieve this instead?
     transmute::<u64, fn(*const u8, i32) -> i32>(6)
   };
 
