@@ -154,6 +154,10 @@ corresponds to `"ust\n"`.
 After these instructions, `r1` contains the second half of the string
 argument to `trace_printk()`: `"om rust\n"`.
 
+(Although the generated comment from `llvm-objdump-7` is `r1 = 0xa74737572206d6f`,
+it's slightly easier to think of this as `r1 = 0x0a74737572206d6f` so that it's
+clearer that the high order byte is `0x0a` and not `0xa7`.)
+
 ### Instruction 2
 
 opcode `0x7b` is described as `stxdw [dst+off], src`, so this does a
