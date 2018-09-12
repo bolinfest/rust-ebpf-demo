@@ -27,7 +27,7 @@ pub extern "C" fn kprobe__sys_clone(_ctx: *mut u8) -> i32 {
     transmute::<u64, fn(*const u8, i32) -> i32>(6)
   };
 
-  let msg: [u8; 17] = [104u8, 101, 108, 108, 111, 32, 102, 114, 111, 109, 32, 114, 117, 115, 116, 10, 0]; //b"hello from rust\0"
+  let msg: [u8; 17] = [104u8, 101, 108, 108, 111, 32, 102, 114, 111, 109, 32, 114, 117, 115, 116, 10, 0]; //b"hello from rust\n\0"
   BPF_FUNC_trace_printk((&msg).as_ptr(), 17);
   return 0;
 }
