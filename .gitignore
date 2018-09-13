@@ -1,3 +1,4 @@
 /Cargo.lock
-/target
+/c/load-bpf
 /go/go
+/target
