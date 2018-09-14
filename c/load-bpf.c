@@ -1,5 +1,6 @@
 #include <linux/bpf.h>
 #include <linux/version.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
@@ -49,6 +50,35 @@ int bpf_prog_load(enum bpf_prog_type type, const struct bpf_insn *insns,
   // bpf_log_buf may help. libbpf.c has a bpf_print_hints() function that
   // can help with this.
   return syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+int waitForSigInt() {
+  sigset_t set;
+  sigemptyset(&set);
+  int rc = sigaddset(&set, SIGINT);
+  if (rc < 0) {
+    perror("Error calling sigaddset()");
+    return 1;
+  }
+
+  rc = sigprocmask(SIG_BLOCK, &set, NULL);
+  if (rc < 0) {
+    perror("Error calling sigprocmask()");
+    return 1;
+  }
+
+  int sig;
+  rc = sigwait(&set, &sig);
+  if (rc < 0) {
+    perror("Error calling sigwait()");
+    return 1;
+  } else if (sig == SIGINT) {
+    fprintf(stderr, "SIGINT received!\n");
+    return 0;
+  } else {
+    fprintf(stderr, "Unexpected signal received: %d\n", sig);
+    return 0;
+  }
 }
 
 int main(int argc, char **argv) {
@@ -179,11 +209,7 @@ int main(int argc, char **argv) {
                   " in another terminal to verify bpf_trace_printk()"
                   " is working as expected.\n");
 
-  // Give the user 10s to look at /sys/kernel/debug/tracing/trace_pipe.
-  // TODO: wait for interrupt instead, which is what go/main.go does.
-  sleep(10);
-
+  int exitCode = waitForSigInt();
   close(fd);
-
-  return 0;
+  return exitCode;
 }
