@@ -10,7 +10,7 @@ bpf_text = """
 
 int trace_entry(struct pt_regs *ctx, int dfd, const char __user *filename)
 {
-    bpf_trace_printk("hello from rust\\n", 17);
+    bpf_trace_printk("hello from rust\\n");
     return 0;
 };
 """

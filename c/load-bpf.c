@@ -1,8 +1,14 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <linux/bpf.h>
+#include <linux/perf_event.h>
 #include <linux/version.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -79,6 +85,125 @@ int waitForSigInt() {
     fprintf(stderr, "Unexpected signal received: %d\n", sig);
     return 0;
   }
+}
+
+/**
+ * Port of bpf_attach_tracing_event() from libbpf.c.
+ */
+int attachTracingEvent(int progFd, const char *event_path, int *pfd) {
+  int efd;
+  ssize_t bytes;
+  char buf[PATH_MAX];
+  struct perf_event_attr attr = {};
+  // Caller did not provided a valid Perf Event FD. Create one with the debugfs
+  // event path provided.
+  snprintf(buf, sizeof(buf), "%s/id", event_path);
+  efd = open(buf, O_RDONLY, 0);
+  if (efd < 0) {
+    fprintf(stderr, "open(%s): %s\n", buf, strerror(errno));
+    return -1;
+  }
+
+  bytes = read(efd, buf, sizeof(buf));
+  if (bytes <= 0 || bytes >= sizeof(buf)) {
+    fprintf(stderr, "read(%s): %s\n", buf, strerror(errno));
+    close(efd);
+    return -1;
+  }
+  close(efd);
+  buf[bytes] = '\0';
+  attr.config = strtol(buf, NULL, 0);
+  attr.type = PERF_TYPE_TRACEPOINT;
+  attr.sample_period = 1;
+  attr.wakeup_events = 1;
+  *pfd = syscall(__NR_perf_event_open, &attr, -1 /* pid */, 0 /* cpu */,
+                 -1 /* group_fd */, PERF_FLAG_FD_CLOEXEC);
+  if (*pfd < 0) {
+    fprintf(stderr, "perf_event_open(%s/id): %s\n", event_path,
+            strerror(errno));
+    return -1;
+  }
+
+  if (ioctl(*pfd, PERF_EVENT_IOC_SET_BPF, progFd) < 0) {
+    perror("ioctl(PERF_EVENT_IOC_SET_BPF)");
+    return -1;
+  }
+  if (ioctl(*pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
+    perror("ioctl(PERF_EVENT_IOC_ENABLE)");
+    return -1;
+  }
+
+  return 0;
+}
+
+/**
+ * Simplified version of bpf_attach_kprobe() from libbpf.c.
+ */
+int attachKprobe(int progFd) {
+  static char *event_type = "kprobe";
+
+  // Note that bpf_try_perf_event_open_with_probe() fails on my system
+  // because I don't have either of
+  // /sys/bus/event_source/devices/kprobe/type or
+  // /sys/bus/event_source/devices/kprobe/format/retprobe, so this is
+  // a port of the fallback code path within bpf_attach_kprobe().
+  int kfd =
+      open("/sys/kernel/debug/tracing/kprobe_events", O_WRONLY | O_APPEND, 0);
+  if (kfd < 0) {
+    perror("Error opening /sys/kernel/debug/tracing/kprobe_events");
+    return -1;
+  }
+
+  char buf[256];
+  char event_alias[128];
+  const char *ev_name = "p_do_sys_open";
+  // I don't think fn_name matters: I think it's just used to help namespace
+  // the probe ID?
+  const char *fn_name = "do_sys_open";
+
+  // I believe that parameterizing the event alias by PID was done because of:
+  // https://github.com/iovisor/bcc/issues/872.
+  snprintf(event_alias, sizeof(event_alias), "%s_bcc_%d", ev_name, getpid());
+
+  // These are defined in libbpf.h, not bpf.h.
+  int BPF_PROBE_ENTRY = 0;
+  int BPF_PROBE_RETURN = 1;
+
+  // I'm assuming the function offset is 0. I'm not sure where to get the
+  // function offset because I do not build my program the way libbpf does.
+  int attach_type = BPF_PROBE_ENTRY;
+  snprintf(buf, sizeof(buf), "%c:%ss/%s %s",
+           attach_type == BPF_PROBE_ENTRY ? 'p' : 'r', event_type, event_alias,
+           fn_name);
+
+  // We appear to be writing some wacky like:
+  // "p:kprobes/p_do_sys_open_bcc_<pid> do_sys_open" to the special kernel file.
+  if (write(kfd, buf, strlen(buf)) < 0) {
+    if (errno == ENOENT) {
+      // write(2) doesn't mention ENOENT, so perhaps this is something special
+      // with respect to this kernel file descriptor?
+      fprintf(stderr, "cannot attach kprobe, probe entry may not exist\n");
+    } else {
+      fprintf(stderr, "cannot attach kprobe, %s\n", strerror(errno));
+    }
+    close(kfd);
+    return -1;
+  }
+  close(kfd);
+
+  // Set buf to:
+  // "/sys/kernel/debug/tracing/events/kprobes/p_do_sys_open_bcc_<pid>".
+  snprintf(buf, sizeof(buf), "/sys/kernel/debug/tracing/events/%ss/%s",
+           event_type, event_alias);
+
+  int pfd = -1;
+  // This should read the event ID from the path in buf, create the
+  // Perf Event event using that ID, and updated value of pfd.
+  if (attachTracingEvent(progFd, buf, &pfd) < 0) {
+    return -1;
+  }
+
+  return pfd;
 }
 
 int main(int argc, char **argv) {
@@ -162,13 +287,6 @@ int main(int argc, char **argv) {
           .imm = 17,
       }),
       ((struct bpf_insn){
-          .code = 0xb7,
-          .dst_reg = BPF_REG_3,
-          .src_reg = BPF_REG_0,
-          .off = 0,
-          .imm = 17,
-      }),
-      ((struct bpf_insn){
           .code = 0x85,
           .dst_reg = BPF_REG_0,
           .src_reg = BPF_REG_0,
@@ -192,24 +310,26 @@ int main(int argc, char **argv) {
   };
 
   int insn_cnt = sizeof(prog) / sizeof(struct bpf_insn);
-  int fd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog, insn_cnt, "GPL");
-  if (fd == -1) {
+  int progFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog, insn_cnt, "GPL");
+  if (progFd == -1) {
     perror("Error calling bpf_prog_load()");
     return 1;
   }
 
-  fprintf(stderr, "Result of bpf_prog_load(): %d\n", fd);
-  // TODO(mbolin): The program is loaded, but it seems that we need to
-  // attach a kprobe? bpf_attach_kprobe() is defined in libbpf for this
-  // purpose.
+  int perfEventFd = attachKprobe(progFd);
+  if (perfEventFd < 0) {
+    perror("Error calling attachKprobe()");
+    close(progFd);
+    return 1;
+  }
 
-  // Sleep for awhile before closing so the user can tail
   fprintf(stderr, "Run "
                   "`sudo cat /sys/kernel/debug/tracing/trace_pipe`"
                   " in another terminal to verify bpf_trace_printk()"
                   " is working as expected.\n");
 
   int exitCode = waitForSigInt();
-  close(fd);
+  close(perfEventFd);
+  close(progFd);
   return exitCode;
 }
