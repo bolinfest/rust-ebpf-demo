@@ -2,3 +2,4 @@
 /c/load-bpf
 /go/go
 /target
+*.pyc
