@@ -1,5 +1,6 @@
 /Cargo.lock
 /c/load-bpf
 /go/go
+/opensnoop/opensnoop
 /target
 *.pyc
