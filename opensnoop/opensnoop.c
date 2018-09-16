@@ -1,7 +1,13 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <linux/bpf.h>
+#include <linux/perf_event.h>
 #include <linux/version.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -58,6 +64,125 @@ int bpf_prog_load(enum bpf_prog_type type, const struct bpf_insn *insns,
   return syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
 }
 
+/**
+ * Port of bpf_attach_tracing_event() from libbpf.c.
+ */
+int attachTracingEvent(int progFd, const char *event_path, int *pfd) {
+  int efd;
+  ssize_t bytes;
+  char buf[PATH_MAX];
+  struct perf_event_attr attr = {};
+  // Caller did not provided a valid Perf Event FD. Create one with the debugfs
+  // event path provided.
+  snprintf(buf, sizeof(buf), "%s/id", event_path);
+  efd = open(buf, O_RDONLY, 0);
+  if (efd < 0) {
+    fprintf(stderr, "open(%s): %s\n", buf, strerror(errno));
+    return -1;
+  }
+
+  bytes = read(efd, buf, sizeof(buf));
+  if (bytes <= 0 || bytes >= sizeof(buf)) {
+    fprintf(stderr, "read(%s): %s\n", buf, strerror(errno));
+    close(efd);
+    return -1;
+  }
+  close(efd);
+  buf[bytes] = '\0';
+  attr.config = strtol(buf, NULL, 0);
+  attr.type = PERF_TYPE_TRACEPOINT;
+  attr.sample_period = 1;
+  attr.wakeup_events = 1;
+  *pfd = syscall(__NR_perf_event_open, &attr, -1 /* pid */, 0 /* cpu */,
+                 -1 /* group_fd */, PERF_FLAG_FD_CLOEXEC);
+  if (*pfd < 0) {
+    fprintf(stderr, "perf_event_open(%s/id): %s\n", event_path,
+            strerror(errno));
+    return -1;
+  }
+
+  if (ioctl(*pfd, PERF_EVENT_IOC_SET_BPF, progFd) < 0) {
+    perror("ioctl(PERF_EVENT_IOC_SET_BPF)");
+    return -1;
+  }
+  if (ioctl(*pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
+    perror("ioctl(PERF_EVENT_IOC_ENABLE)");
+    return -1;
+  }
+
+  return 0;
+}
+
+/**
+ * Simplified version of bpf_attach_kprobe() from libbpf.c.
+ */
+int attachKprobe(int progFd) {
+  static char *event_type = "kprobe";
+
+  // Note that bpf_try_perf_event_open_with_probe() fails on my system
+  // because I don't have either of
+  // /sys/bus/event_source/devices/kprobe/type or
+  // /sys/bus/event_source/devices/kprobe/format/retprobe, so this is
+  // a port of the fallback code path within bpf_attach_kprobe().
+  int kfd =
+      open("/sys/kernel/debug/tracing/kprobe_events", O_WRONLY | O_APPEND, 0);
+  if (kfd < 0) {
+    perror("Error opening /sys/kernel/debug/tracing/kprobe_events");
+    return -1;
+  }
+
+  char buf[256];
+  char event_alias[128];
+  const char *ev_name = "p_do_sys_open";
+  // I don't think fn_name matters: I think it's just used to help namespace
+  // the probe ID?
+  const char *fn_name = "do_sys_open";
+
+  // I believe that parameterizing the event alias by PID was done because of:
+  // https://github.com/iovisor/bcc/issues/872.
+  snprintf(event_alias, sizeof(event_alias), "%s_bcc_%d", ev_name, getpid());
+
+  // These are defined in libbpf.h, not bpf.h.
+  int BPF_PROBE_ENTRY = 0;
+  int BPF_PROBE_RETURN = 1;
+
+  // I'm assuming the function offset is 0. I'm not sure where to get the
+  // function offset because I do not build my program the way libbpf does.
+  int attach_type = BPF_PROBE_ENTRY;
+  snprintf(buf, sizeof(buf), "%c:%ss/%s %s",
+           attach_type == BPF_PROBE_ENTRY ? 'p' : 'r', event_type, event_alias,
+           fn_name);
+
+  // We appear to be writing some wacky like:
+  // "p:kprobes/p_do_sys_open_bcc_<pid> do_sys_open" to the special kernel file.
+  if (write(kfd, buf, strlen(buf)) < 0) {
+    if (errno == ENOENT) {
+      // write(2) doesn't mention ENOENT, so perhaps this is something special
+      // with respect to this kernel file descriptor?
+      fprintf(stderr, "cannot attach kprobe, probe entry may not exist\n");
+    } else {
+      fprintf(stderr, "cannot attach kprobe, %s\n", strerror(errno));
+    }
+    close(kfd);
+    return -1;
+  }
+  close(kfd);
+
+  // Set buf to:
+  // "/sys/kernel/debug/tracing/events/kprobes/p_do_sys_open_bcc_<pid>".
+  snprintf(buf, sizeof(buf), "/sys/kernel/debug/tracing/events/%ss/%s",
+           event_type, event_alias);
+
+  int pfd = -1;
+  // This should read the event ID from the path in buf, create the
+  // Perf Event event using that ID, and updated value of pfd.
+  if (attachTracingEvent(progFd, buf, &pfd) < 0) {
+    return -1;
+  }
+
+  return pfd;
+}
+
 struct val_t {
   __u64 id;
   __u64 ts;
@@ -68,17 +193,50 @@ struct val_t {
 int main(int argc, char **argv) {
   int exitCode = 1;
   bpf_log_buf[0] = '\0';
-  int progFd = -1;
+  int hashMapFd = -1, eventsMapFd = -1, progFd = -1, kprobeFd = -1;
   union bpf_attr attr;
   memset(&attr, 0, sizeof(attr));
 
+  // BPF_HASH
   attr.map_type = BPF_MAP_TYPE_HASH;
   attr.key_size = sizeof(__u64);
   attr.value_size = sizeof(struct val_t);
   attr.max_entries = 10240; // Default value for BPF_HASH().
-  int hashMapFd = syscall(__NR_bpf, BPF_MAP_CREATE, &attr, sizeof(attr));
+  hashMapFd = syscall(__NR_bpf, BPF_MAP_CREATE, &attr, sizeof(attr));
   if (hashMapFd < 0) {
     perror("Failed to create HASH_MAP");
+    goto error;
+  }
+
+  // Note that we could update the BPF_LD_MAP_FD() instruction
+  // with the observed value if it is not 3, but then we have to
+  // modify the code generated from the Python script.
+  if (hashMapFd != 3) {
+    fprintf(stderr,
+            "Invariant violation: fd for HASH_MAP must be 3, but was %d.\n",
+            hashMapFd);
+    goto error;
+  }
+
+  // BPF_PERF_OUTPUT
+  attr.map_type = BPF_MAP_TYPE_PERF_EVENT_ARRAY;
+  attr.key_size = sizeof(int);
+  attr.value_size = sizeof(__u32);
+  attr.max_entries = 1; // libbpf prefers num_cpus for this value.
+  eventsMapFd = syscall(__NR_bpf, BPF_MAP_CREATE, &attr, sizeof(attr));
+  if (eventsMapFd < 0) {
+    perror("Failed to create BPF_PERF_OUTPUT");
+    goto error;
+  }
+
+  // Note that we could update the BPF_LD_MAP_FD() instruction
+  // with the observed value if it is not 4, but then we have to
+  // modify the code generated from the Python script.
+  if (eventsMapFd != 4) {
+    fprintf(
+        stderr,
+        "Invariant violation: fd for BPF_PERF_OUTPUT must be 4, but was %d.\n",
+        eventsMapFd);
     goto error;
   }
 
@@ -232,96 +390,20 @@ int main(int argc, char **argv) {
           .off = -8,
           .imm = 0,
       }),
-
-      // When BCC generates the bytecode for this function,
-      // it inserts a "load double-word" instruction of:
-      //
-      //   18 11 00 00 03 00 00 00 00 00 00 00 00 00 00 00
-      //
-      // This corresponds to the two bpf_insn below:
-      //
-      // ((struct bpf_insn){
-      //     .code = 0x18,
-      //     .dst_reg = BPF_REG_1,
-      //     .src_reg = BPF_REG_1,
-      //     .off = 0,
-      //     .imm = 3,
-      // }),
-      // ((struct bpf_insn){
-      //     .code = 0x0,
-      //     .dst_reg = BPF_REG_0,
-      //     .src_reg = BPF_REG_0,
-      //     .off = 0,
-      //     .imm = 0,
-      // }),
-      //
-      // Note this has a weird case where the src and dst are
-      // the same register. There appears to be some special logic
-      // where a "load double-word" instruction with src_reg=1
-      // flags the imm value as a file descriptor for a BPF map, which
-      // is imperative for program verification.
-      //
-      // As a workaround, we replace this with our own
-      // "load double-word" instruction with the following changes:
-      // - src_reg is changed to BPF_REG_0.
-      // - imm is changed to to the fd of the appropriate BPF map.
-      //
-      // Note that because our replacement is using the same
-      // number of instructions as the original bytecode, we do
-      // not have to update the offsets in the existing jump instructions.
-      //
-      // This Go program from Cloudflare does a similar thing
-      // where they build the bytecode programmatically, though they
-      // use a helper library. Here is the use of a helper function
-      // named BPFILdMapFd
-      // (https://github.com/cloudflare/cloudflare-blog/blob/765d4b663d74b0a77a646a1810b3f8ec3d64ea03/2018-03-ebpf/ebpf.go#L105):
-      //
-      //   // r1 must point to map
-      //   ebpf.BPFILdMapFd(ebpf.Reg1, mapFd),
-      //
-      // And here is the code in the ebpf library that implements
-      // that helper function
-      // (https://github.com/newtools/ebpf/blob/bccd8019d64f716dd3647e82950ae38c7291fc77/types.go#L1354-L1369):
-      //
-      //   // BPFILdMapFd loads a user space fd into a BPF program as a
-      //   reference to a
-      //   // specific eBPF map.
-      //   func BPFILdMapFd(dst Register, imm int) Instruction {
-      //     return BPFILdImm64Raw(dst, 1, int64(imm))
-      //   }
-      //
-      //   func BPFILdImm64(dst Register, imm int64) Instruction {
-      //     return BPFILdImm64Raw(dst, 0, imm)
-      //   }
-      //
-      //   func BPFILdImm64Raw(dst, src Register, imm int64) Instruction {
-      //     return Instruction{
-      //       OpCode:      LdDW,
-      //       DstRegister: dst,
-      //       SrcRegister: src,
-      //       Constant:    imm,
-      //     }
-      //   }
-      //
-      // If you look at the code that turns an LdDW Instruction into the binary
-      // format for the kernel, you can verify that this is serialized as two
-      // instructions:
-      // https://github.com/newtools/ebpf/blob/bccd8019d64f716dd3647e82950ae38c7291fc77/types.go#L1354.
       ((struct bpf_insn){
           .code = 0x18,
           .dst_reg = BPF_REG_1,
-          .src_reg = 1, // BPF_PSEUDO_MAP_FD; see BPF_LD_MAP_FD() in libbpf.
+          .src_reg = BPF_REG_1,
           .off = 0,
-          .imm = hashMapFd,
+          .imm = 3,
       }),
       ((struct bpf_insn){
           .code = 0x0,
           .dst_reg = BPF_REG_0,
           .src_reg = BPF_REG_0,
           .off = 0,
-          .imm = hashMapFd < 0 ? 0xFFFF : 0,
+          .imm = 0,
       }),
-
       ((struct bpf_insn){
           .code = 0xbf,
           .dst_reg = BPF_REG_2,
@@ -387,6 +469,12 @@ int main(int argc, char **argv) {
     goto error;
   }
 
+  kprobeFd = attachKprobe(progFd);
+  if (kprobeFd < 0) {
+    perror("Error calling attachKprobe()");
+    goto error;
+  }
+
   exitCode = 0;
   goto cleanup;
 
@@ -398,9 +486,17 @@ error:
   }
 
 cleanup:
+  if (kprobeFd != -1) {
+    close(kprobeFd);
+  }
   if (progFd != -1) {
     close(progFd);
   }
-  close(hashMapFd);
+  if (eventsMapFd != -1) {
+    close(eventsMapFd);
+  }
+  if (hashMapFd != -1) {
+    close(hashMapFd);
+  }
   return exitCode;
 }
