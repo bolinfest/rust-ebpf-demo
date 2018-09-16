@@ -1,5 +1,5 @@
 from bcc import ArgString, BPF, DEBUG_LLVM_IR, DEBUG_PREPROCESSOR, DEBUG_SOURCE, DEBUG_BPF_REGISTER_STATE
-from debug import print_bpf_insn_struct, print_list_of_instructions
+from debug import print_bpf_insn_struct
 
 # define BPF program
 bpf_text = """
@@ -68,17 +68,18 @@ int trace_return(struct pt_regs *ctx)
 }
 """
 
-# b = BPF(text=bpf_text, debug=DEBUG_LLVM_IR | DEBUG_PREPROCESSOR | DEBUG_SOURCE | DEBUG_BPF_REGISTER_STATE)
-b = BPF(text=bpf_text)
-bytecode = b.dump_func("trace_entry")
+# goal = 'annotated bytecode'
+goal = 'dump C code'
 
-# Note this does not seem to make as much sense
-# as `python bpf_trace_printk.py` as the first instruction
-# is:
-#
-#  0 7917680000000000 # *(u64 *) r7 = (r1 + 104)
-#
-# But what is 104 bytes off of what is in r1?
-# Perhaps things are messed up because of how
-# the map created by the BPF_HASH macro gets incorporated?
-print_list_of_instructions(bytecode)
+if goal == 'annotated bytecode':
+    # Specifying debug=DEBUG_SOURCE appears superior to
+    # using print_list_of_instructions(bytecode) because
+    # DEBUG_SOURCE includes comments that show the C code
+    # that corresponds to the bytecode.
+    #
+    # Note that DEBUG_SOURCE writes to stderr rather than stdout.
+    b = BPF(text=bpf_text, debug=DEBUG_SOURCE)
+elif goal == 'dump C code':
+    b = BPF(text=bpf_text)
+    bytecode = b.dump_func("trace_entry")
+    print_bpf_insn_struct(bytecode)
