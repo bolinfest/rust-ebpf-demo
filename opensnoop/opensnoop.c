@@ -3,9 +3,11 @@
 #include "libbpf_wrapper.h"
 #include <bcc/perf_reader.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <linux/version.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -21,9 +23,6 @@
 
 #define LOG_BUF_SIZE 65536
 #define NAME_MAX 255
-
-// TODO: Do get_online_cpus() instead of hardcoding to 8.
-#define NUM_CPU 8
 
 char bpf_log_buf[LOG_BUF_SIZE];
 
@@ -42,6 +41,89 @@ struct data_t {
   char fname[NAME_MAX];
 };
 
+/**
+ * A considerably more laborious implementation of get_online_cpus()
+ * compared to the Python code in the bcc repo:
+ * https://github.com/iovisor/bcc/blob/master/src/python/bcc/utils.py#L21-L36.
+ */
+int getOnlineCpus(int **cpus, size_t *numCpu) {
+  int fd = open("/sys/devices/system/cpu/online", O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return -1;
+  }
+
+  const int bufSize = 256;
+  char buf[bufSize];
+  int numRead = read(fd, buf, bufSize);
+  if (numRead == bufSize || numRead == 0) {
+    // We are not prepared for the output to be this big (or empty)!
+    errno = EINVAL;
+    return -1;
+  }
+  if (close(fd) < 0) {
+    return -1;
+  }
+
+  // Ensure the contents of buf are NUL-terminated so that strtol() does not
+  // read unintended values.
+  buf[numRead] = '\0';
+
+  size_t capacity = 16;
+  *cpus = malloc(capacity * sizeof(int));
+  if (cpus == NULL) {
+    return -1;
+  }
+
+  int lastEndIndex = -1;
+  int lastHyphenIndex = -1;
+  size_t numElements = 0;
+  for (size_t i = 0; i <= numRead; i++) {
+    if (i == numRead || buf[i] == ',') {
+      errno = 0;
+      int rangeStart =
+          strtol(buf + lastEndIndex + 1, /* endptr */ NULL, /* base */ 10);
+      if (errno != 0) {
+        return -1;
+      }
+
+      int rangeEnd;
+      if (lastHyphenIndex != -1) {
+        errno = 0;
+        rangeEnd =
+            strtol(buf + lastHyphenIndex + 1, /* endptr */ NULL, /* base */ 10);
+        if (errno != 0) {
+          return -1;
+        }
+      } else {
+        rangeEnd = rangeStart;
+      }
+
+      int numCpusToAdd = rangeEnd - rangeStart + 1;
+      int extraSpace = capacity - numElements - numCpusToAdd;
+      if (extraSpace < 0) {
+        size_t newSize = capacity - extraSpace;
+        *cpus = realloc(cpus, newSize * sizeof(int));
+        if (cpus == NULL) {
+          return -1;
+        }
+        capacity = newSize;
+      }
+
+      for (int j = 0; j < numCpusToAdd; j++) {
+        *(*cpus + numElements++) = rangeStart + j;
+      }
+
+      lastEndIndex = i;
+      lastHyphenIndex = -1;
+    } else if (buf[i] == '-') {
+      lastHyphenIndex = i;
+    }
+  }
+
+  *numCpu = numElements;
+  return 0;
+}
+
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   struct data_t *event = (struct data_t *)raw;
   int fd_s, err;
@@ -59,11 +141,23 @@ void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
 
 int main(int argc, char **argv) {
   int exitCode = 1;
+
+  int *cpus = NULL;
+  size_t numCpu = 0;
+  if (getOnlineCpus(&cpus, &numCpu) < 0) {
+    perror("Failure in getOnlineCpus()");
+    goto error;
+  }
+  fprintf(stderr, "Num cpus found: %zu\n", numCpu);
+  for (int z = 0; z < numCpu; z++) {
+    fprintf(stderr, "cpus[%d] = %d\n", z, cpus[z]);
+  }
+
   bpf_log_buf[0] = '\0';
   int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
       returnProgFd, kretprobeFd;
-  struct perf_reader *readers[NUM_CPU];
-  memset(readers, 0, NUM_CPU * sizeof(struct perf_reader *));
+  struct perf_reader **readers = NULL;
+  readers = malloc(numCpu * sizeof(struct perf_reader *));
 
   // On my system (Ubuntu 18.04.1 LTS), `uname -r` returns "4.15.0-33-generic".
   // KERNEL_VERSION(4, 15, 0) is 265984, but LINUX_VERSION_CODE is in
@@ -104,7 +198,7 @@ int main(int argc, char **argv) {
   eventsMapFd = bpf_create_map(BPF_MAP_TYPE_PERF_EVENT_ARRAY, perfMapName,
                                /* key_size */ sizeof(int),
                                /* value_size */ sizeof(__u32),
-                               /* max_entries */ NUM_CPU,
+                               /* max_entries */ numCpu,
                                /* map_flags */ 0);
 
   if (eventsMapFd < 0) {
@@ -163,8 +257,8 @@ int main(int argc, char **argv) {
 
   // Open a perf buffer for each online CPU.
   // (This is what open_perf_buffer() in bcc/table.py does.)
-  for (int cpu = 0; cpu < NUM_CPU; cpu++) {
-    // TODO: Verify these are the right CPU numbers?
+  for (int cpuIndex = 0; cpuIndex < numCpu; cpuIndex++) {
+    int cpu = cpus[cpuIndex];
     void *reader = bpf_open_perf_buffer(&perf_reader_raw_callback,
                                         /* lost_cb */ NULL,
                                         /* cb_cookie */ NULL,
@@ -193,7 +287,7 @@ int main(int argc, char **argv) {
   // perf_reader_raw_callback() on new events.
   while (1) {
     // From the implementation, this always appear to return 0.
-    int rc = perf_reader_poll(NUM_CPU, readers, -1);
+    int rc = perf_reader_poll(numCpu, readers, -1);
     if (rc != 0) {
       fprintf(stderr, "Unexpected return value from perf_reader_poll(): %d\n.",
               rc);
@@ -211,10 +305,13 @@ error:
   }
 
 cleanup:
-  for (int i = 0; i < NUM_CPU; i++) {
-    struct perf_reader *reader = readers[i];
-    if (reader != NULL) {
-      perf_reader_free((void *)reader);
+  // readers
+  if (readers != NULL) {
+    for (int i = 0; i < numCpu; i++) {
+      struct perf_reader *reader = readers[i];
+      if (reader != NULL) {
+        perf_reader_free((void *)reader);
+      }
     }
   }
 
@@ -241,5 +338,11 @@ cleanup:
   if (hashMapFd != -1) {
     close(hashMapFd);
   }
+
+  // cpus array allocated by getOnlineCpus().
+  if (cpus != NULL) {
+    free(cpus);
+  }
+
   return exitCode;
 }
