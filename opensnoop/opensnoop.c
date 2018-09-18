@@ -184,7 +184,12 @@ int main(int argc, char **argv) {
   // Loop and call perf_buffer_poll(), which has the side-effect of calling
   // perf_reader_raw_callback() on new events.
   while (1) {
+    // From the implementation, this always appear to return 0.
     int rc = perf_reader_poll(NUM_CPU, readers, -1);
+    if (rc != 0) {
+      fprintf(stderr, "Unexpected return value from perf_reader_poll(): %d\n.",
+              rc);
+    }
   }
 
   exitCode = 0;
