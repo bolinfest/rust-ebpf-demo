@@ -185,7 +185,6 @@ int main(int argc, char **argv) {
   // perf_reader_raw_callback() on new events.
   while (1) {
     int rc = perf_reader_poll(NUM_CPU, readers, -1);
-    sleep(1);
   }
 
   exitCode = 0;
