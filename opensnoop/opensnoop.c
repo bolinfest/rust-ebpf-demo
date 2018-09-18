@@ -148,10 +148,6 @@ int main(int argc, char **argv) {
     perror("Failure in getOnlineCpus()");
     goto error;
   }
-  fprintf(stderr, "Num cpus found: %zu\n", numCpu);
-  for (int z = 0; z < numCpu; z++) {
-    fprintf(stderr, "cpus[%d] = %d\n", z, cpus[z]);
-  }
 
   bpf_log_buf[0] = '\0';
   int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
