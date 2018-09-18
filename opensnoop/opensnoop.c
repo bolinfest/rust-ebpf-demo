@@ -70,7 +70,7 @@ int getOnlineCpus(int **cpus, size_t *numCpu) {
 
   size_t capacity = 16;
   *cpus = malloc(capacity * sizeof(int));
-  if (cpus == NULL) {
+  if (*cpus == NULL) {
     return -1;
   }
 
@@ -103,7 +103,7 @@ int getOnlineCpus(int **cpus, size_t *numCpu) {
       if (extraSpace < 0) {
         size_t newSize = capacity - extraSpace;
         *cpus = realloc(cpus, newSize * sizeof(int));
-        if (cpus == NULL) {
+        if (*cpus == NULL) {
           return -1;
         }
         capacity = newSize;
