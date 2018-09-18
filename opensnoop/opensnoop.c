@@ -4,6 +4,7 @@
 #include <bcc/perf_reader.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <limits.h>
 #include <linux/version.h>
 #include <stdio.h>
@@ -40,6 +41,23 @@ struct data_t {
   char comm[TASK_COMM_LEN];
   char fname[NAME_MAX];
 };
+
+/**
+ * If a positive integer is parsed successfully, returns the value.
+ * If not, returns -1 and errno is set.
+ */
+int parseNonNegativeInteger(const char* str) {
+  errno = 0;
+  int value = strtol(str, /* endptr */ NULL, /* base */ 10);
+  if (errno != 0) {
+    return -1;
+  } else if (value < 0) {
+    errno = EINVAL;
+    return -1;
+  } else {
+    return value;
+  }
+}
 
 /**
  * A considerably more laborious implementation of get_online_cpus()
@@ -124,8 +142,98 @@ int getOnlineCpus(int **cpus, size_t *numCpu) {
   return 0;
 }
 
+int opt_timestamp = 0;
+int opt_failed = 0;
+int opt_pid = -1;
+int opt_tid = -1;
+int opt_duration = -1;
+char *opt_name = NULL;
+
+void usage(FILE* fd) {
+  // TODO: Write usage string.
+  fprintf(fd, "Usage...\n");
+}
+
+void parseArgs(int argc, char **argv) {
+  int c;
+  while (1) {
+    static struct option long_options[] = {
+        {"help", no_argument, 0, 'h'},
+
+        {"timestamp", required_argument, 0, 'T'},
+        {"failed", no_argument, 0, 'x'},
+        {"pid", required_argument, 0, 'p'},
+        {"tid", required_argument, 0, 't'},
+        {"duration", required_argument, 0, 'd'},
+        {"name", required_argument, 0, 'n'},
+        {0, 0, 0, 0}};
+    int option_index = 0;
+    c = getopt_long(argc, argv, "hT:xp:t:d:n:", long_options, &option_index);
+    if (c == -1) {
+      break;
+    }
+
+    switch (c) {
+      case 0:
+        // I can't tell if this is necessary from the getopt_long man page.
+        break;
+
+      case 'T':
+        opt_timestamp = parseNonNegativeInteger(optarg);
+        if (opt_timestamp == -1) {
+          fprintf(stderr, "Invalid value for -T: '%s'\n", optarg);
+          exit(1);
+        }
+        break;
+
+      case 'x':
+        opt_failed = 1;
+        break;
+
+      case 'p':
+        opt_pid = parseNonNegativeInteger(optarg);
+        if (opt_pid == -1) {
+          fprintf(stderr, "Invalid value for -p: '%s'\n", optarg);
+          exit(1);
+        }
+
+      case 't':
+        opt_tid = parseNonNegativeInteger(optarg);
+        if (opt_tid == -1) {
+          fprintf(stderr, "Invalid value for -t: '%s'\n", optarg);
+          exit(1);
+        }
+
+      case 'd':
+        opt_duration = parseNonNegativeInteger(optarg);
+        if (opt_duration == -1) {
+          fprintf(stderr, "Invalid value for -d: '%s'\n", optarg);
+          exit(1);
+        }
+
+      case 'h':
+        usage(stdout);
+        exit(0);
+        break;
+
+      default:
+        usage(stderr);
+        exit(1);
+        break;
+    }
+  }
+}
+
+void printHeader() {
+  printf("%-6s %-16s %4s %3s %s\n", "PID", "COMM", "FD", "ERR", "PATH");
+}
+
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   struct data_t *event = (struct data_t *)raw;
+  if (opt_failed && event->ret >= 0) {
+    return;
+  }
+
   int fd_s, err;
   if (event->ret >= 0) {
     fd_s = event->ret;
@@ -140,8 +248,9 @@ void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
 }
 
 int main(int argc, char **argv) {
-  int exitCode = 1;
+  parseArgs(argc, argv);
 
+  int exitCode = 1;
   int *cpus = NULL;
   size_t numCpu = 0;
   if (getOnlineCpus(&cpus, &numCpu) < 0) {
@@ -277,7 +386,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("%-6s %-16s %4s %3s %s\n", "PID", "COMM", "FD", "ERR", "PATH");
+  printHeader();
 
   // Loop and call perf_buffer_poll(), which has the side-effect of calling
   // perf_reader_raw_callback() on new events.
