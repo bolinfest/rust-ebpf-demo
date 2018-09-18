@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <linux/version.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 // This seems like it should be in <linux/sched.h>,
@@ -61,6 +62,9 @@ int main(int argc, char **argv) {
   bpf_log_buf[0] = '\0';
   int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
       returnProgFd, kretprobeFd;
+  struct perf_reader *readers[NUM_CPU];
+  memset(readers, 0, NUM_CPU * sizeof(struct perf_reader *));
+
   // TODO: Read this from uname(2) rather than hardcoding it here or else
   // the compiled version of this program cannot run on another machine.
   unsigned int kern_version = LINUX_VERSION_CODE;
@@ -151,7 +155,6 @@ int main(int argc, char **argv) {
 
   // Open a perf buffer for each online CPU.
   // (This is what open_perf_buffer() in bcc/table.py does.)
-  struct perf_reader *readers[NUM_CPU];
   for (int cpu = 0; cpu < NUM_CPU; cpu++) {
     // TODO: Verify these are the right CPU numbers?
     void *reader = bpf_open_perf_buffer(&perf_reader_raw_callback,
@@ -164,7 +167,8 @@ int main(int argc, char **argv) {
       goto error;
     }
 
-    // TODO: Make sure perfReaderFd gets closed as part of cleanup.
+    // The fd is owned by the reader, which will be cleaned up by
+    // perf_reader_free().
     int perfReaderFd = perf_reader_fd((struct perf_reader *)reader);
     readers[cpu] = reader;
 
@@ -195,6 +199,13 @@ error:
   }
 
 cleanup:
+  for (int i = 0; i < NUM_CPU; i++) {
+    struct perf_reader *reader = readers[i];
+    if (reader != NULL) {
+      perf_reader_free((void *)reader);
+    }
+  }
+
   // kprobe
   if (kprobeFd != -1) {
     close(kprobeFd);
