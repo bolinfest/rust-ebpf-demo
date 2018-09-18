@@ -65,8 +65,16 @@ int main(int argc, char **argv) {
   struct perf_reader *readers[NUM_CPU];
   memset(readers, 0, NUM_CPU * sizeof(struct perf_reader *));
 
-  // TODO: Read this from uname(2) rather than hardcoding it here or else
-  // the compiled version of this program cannot run on another machine.
+  // On my system (Ubuntu 18.04.1 LTS), `uname -r` returns "4.15.0-33-generic".
+  // KERNEL_VERSION(4, 15, 0) is 265984, but LINUX_VERSION_CODE is in
+  // /usr/include/linux/version.h is 266002, so the values do not match.
+  // Ideally, we would use uname(2) to compute kern_version at runtime so this
+  // binary would not have to be rebuilt for a minor kernel upgrade, but if
+  // kern_version does not match LINUX_VERSION_CODE exactly, then
+  // bpf_prog_load(BPF_PROG_TYPE_KPROBE) will fail with EPERM:
+  // https://github.com/torvalds/linux/blob/v4.15/kernel/bpf/syscall.c#L1140-L1142.
+  // Note this issue has come up in the bcc project itself:
+  // https://github.com/iovisor/bcc/commit/bfecc243fc8e822417836dd76a9b4028a5d8c2c9.
   unsigned int kern_version = LINUX_VERSION_CODE;
 
   // BPF_HASH
