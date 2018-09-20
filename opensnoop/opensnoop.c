@@ -46,7 +46,7 @@ struct data_t {
  * If a positive integer is parsed successfully, returns the value.
  * If not, returns -1 and errno is set.
  */
-int parseNonNegativeInteger(const char* str) {
+int parseNonNegativeInteger(const char *str) {
   errno = 0;
   int value = strtol(str, /* endptr */ NULL, /* base */ 10);
   if (errno != 0) {
@@ -149,7 +149,7 @@ int opt_tid = -1;
 int opt_duration = -1;
 char *opt_name = NULL;
 
-void usage(FILE* fd) {
+void usage(FILE *fd) {
   // TODO: Write usage string.
   fprintf(fd, "Usage...\n");
 }
@@ -174,52 +174,52 @@ void parseArgs(int argc, char **argv) {
     }
 
     switch (c) {
-      case 0:
-        // I can't tell if this is necessary from the getopt_long man page.
-        break;
+    case 0:
+      // I can't tell if this is necessary from the getopt_long man page.
+      break;
 
-      case 'T':
-        opt_timestamp = parseNonNegativeInteger(optarg);
-        if (opt_timestamp == -1) {
-          fprintf(stderr, "Invalid value for -T: '%s'\n", optarg);
-          exit(1);
-        }
-        break;
-
-      case 'x':
-        opt_failed = 1;
-        break;
-
-      case 'p':
-        opt_pid = parseNonNegativeInteger(optarg);
-        if (opt_pid == -1) {
-          fprintf(stderr, "Invalid value for -p: '%s'\n", optarg);
-          exit(1);
-        }
-
-      case 't':
-        opt_tid = parseNonNegativeInteger(optarg);
-        if (opt_tid == -1) {
-          fprintf(stderr, "Invalid value for -t: '%s'\n", optarg);
-          exit(1);
-        }
-
-      case 'd':
-        opt_duration = parseNonNegativeInteger(optarg);
-        if (opt_duration == -1) {
-          fprintf(stderr, "Invalid value for -d: '%s'\n", optarg);
-          exit(1);
-        }
-
-      case 'h':
-        usage(stdout);
-        exit(0);
-        break;
-
-      default:
-        usage(stderr);
+    case 'T':
+      opt_timestamp = parseNonNegativeInteger(optarg);
+      if (opt_timestamp == -1) {
+        fprintf(stderr, "Invalid value for -T: '%s'\n", optarg);
         exit(1);
-        break;
+      }
+      break;
+
+    case 'x':
+      opt_failed = 1;
+      break;
+
+    case 'p':
+      opt_pid = parseNonNegativeInteger(optarg);
+      if (opt_pid == -1) {
+        fprintf(stderr, "Invalid value for -p: '%s'\n", optarg);
+        exit(1);
+      }
+
+    case 't':
+      opt_tid = parseNonNegativeInteger(optarg);
+      if (opt_tid == -1) {
+        fprintf(stderr, "Invalid value for -t: '%s'\n", optarg);
+        exit(1);
+      }
+
+    case 'd':
+      opt_duration = parseNonNegativeInteger(optarg);
+      if (opt_duration == -1) {
+        fprintf(stderr, "Invalid value for -d: '%s'\n", optarg);
+        exit(1);
+      }
+
+    case 'h':
+      usage(stdout);
+      exit(0);
+      break;
+
+    default:
+      usage(stderr);
+      exit(1);
+      break;
     }
   }
 }
