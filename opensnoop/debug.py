@@ -4,37 +4,37 @@ import struct
 # This list comes from `enum bpf_func_id`:
 # https://elixir.bootlin.com/linux/v4.7/source/include/uapi/linux/bpf.h#L146
 _bpf_func_id = [
-    'bpf_unspec',
-    'bpf_map_lookup_elem',
-    'bpf_map_update_elem',
-    'bpf_map_delete_elem',
-    'bpf_probe_read',
-    'bpf_ktime_get_ns',
-    'bpf_trace_printk',
-    'bpf_get_prandom_u32',
-    'bpf_get_smp_processor_id',
-    'bpf_skb_store_bytes',
-    'bpf_l3_csum_replace',
-    'bpf_l4_csum_replace',
-    'bpf_tail_call',
-    'bpf_clone_redirect',
-    'bpf_get_current_pid_tgid',
-    'bpf_get_current_uid_gid',
-    'bpf_get_current_comm',
-    'bpf_get_cgroup_classid',
-    'bpf_skb_vlan_push',
-    'bpf_skb_vlan_pop',
-    'bpf_skb_get_tunnel_key',
-    'bpf_skb_set_tunnel_key',
-    'bpf_perf_event_read',
-    'bpf_redirect',
-    'bpf_get_route_realm',
-    'bpf_perf_event_output',
-    'bpf_skb_load_bytes',
-    'bpf_get_stackid',
-    'bpf_csum_diff',
-    'bpf_skb_get_tunnel_opt',
-    'bpf_skb_set_tunnel_opt',
+    "bpf_unspec",
+    "bpf_map_lookup_elem",
+    "bpf_map_update_elem",
+    "bpf_map_delete_elem",
+    "bpf_probe_read",
+    "bpf_ktime_get_ns",
+    "bpf_trace_printk",
+    "bpf_get_prandom_u32",
+    "bpf_get_smp_processor_id",
+    "bpf_skb_store_bytes",
+    "bpf_l3_csum_replace",
+    "bpf_l4_csum_replace",
+    "bpf_tail_call",
+    "bpf_clone_redirect",
+    "bpf_get_current_pid_tgid",
+    "bpf_get_current_uid_gid",
+    "bpf_get_current_comm",
+    "bpf_get_cgroup_classid",
+    "bpf_skb_vlan_push",
+    "bpf_skb_vlan_pop",
+    "bpf_skb_get_tunnel_key",
+    "bpf_skb_set_tunnel_key",
+    "bpf_perf_event_read",
+    "bpf_redirect",
+    "bpf_get_route_realm",
+    "bpf_perf_event_output",
+    "bpf_skb_load_bytes",
+    "bpf_get_stackid",
+    "bpf_csum_diff",
+    "bpf_skb_get_tunnel_opt",
+    "bpf_skb_set_tunnel_opt",
 ]
 
 
@@ -62,37 +62,37 @@ def print_list_of_instructions(bytecode):
                 src_operand = "%d" % imm
 
             operation = (0xF0 & opcode) >> 4
-            op_suffix = ''
+            op_suffix = ""
             if operation == 0x0:
-                op = '+='
+                op = "+="
             elif operation == 0x1:
-                op = '-='
+                op = "-="
             elif operation == 0x2:
-                op = '*='
+                op = "*="
             elif operation == 0x3:
-                op = '/='
+                op = "/="
             elif operation == 0x4:
-                op = '|='
+                op = "|="
             elif operation == 0x5:
-                op = '&='
+                op = "&="
             elif operation == 0x6:
-                op = '<<='
+                op = "<<="
             elif operation == 0x7:
-                op = '>>='
-                op_suffix = ' (logical)'
+                op = ">>="
+                op_suffix = " (logical)"
             elif operation == 0x8:
-                op = '= -'
+                op = "= -"
             elif operation == 0x9:
-                op = '%='
+                op = "%="
             elif operation == 0xa:
-                op = '^='
+                op = "^="
             elif operation == 0xb:
-                op = '='
+                op = "="
             elif operation == 0xc:
-                op = '>>='
-                op_suffix = ' (arithmetic)'
+                op = ">>="
+                op_suffix = " (arithmetic)"
             else:
-                op = 'op?'
+                op = "op?"
             return "r%d %s %s%s" % (dst_reg, op, src_operand, op_suffix)
         elif opcode == 0x85:
             return "call %s()" % _bpf_func_id[imm]
@@ -119,7 +119,6 @@ def print_list_of_instructions(bytecode):
         else:
             return "!!!"
 
-
     for index, instruction in iterator:
         next_instr[0] = None
         comment = decode_instruction(instruction)
@@ -130,7 +129,7 @@ def print_list_of_instructions(bytecode):
 
 def format_imm_bytes(imm):
     s = hexlify(struct.pack("i", imm))
-    s = s.rjust(8, ' ')
+    s = s.rjust(8, " ")
     return s[6:8] + s[4:6] + s[2:4] + s[0:2]
 
 
@@ -164,12 +163,15 @@ def parse_instruction(instruction):
 
 def print_bpf_insns(bytecode, array_name, f):
     """Prints the eBPF bytecode as the equivalent bpf_insn[] in C."""
-    f.write("""\
+    f.write(
+        """\
 // GENERATED FILE: See opensnoop.py.
 #include "libbpf_wrapper.h"
 
 struct bpf_insn %s[] = {
-""" % array_name)
+"""
+        % array_name
+    )
     for b_offset in xrange(0, len(bytecode), 8):
         instruction = bytecode[b_offset : b_offset + 8]
         opcode, dst_reg, src_reg, offset, imm = parse_instruction(instruction)
