@@ -85,6 +85,7 @@ generated_header = os.path.join(
 )
 trace_entry_no_filter_bytecode = bpf.dump_func("trace_entry")
 trace_return_bytecode = bpf.dump_func("trace_return")
+bpf.cleanup() # Reset fds.
 
 # Generate bytecode for trace_entry() with a tid filter.
 PLACEHOLDER_TID = 123456
@@ -94,6 +95,7 @@ bpf = BPF(
     )
 )
 trace_entry_tid_filter_bytecode = bpf.dump_func("trace_entry")
+bpf.cleanup() # Reset fds.
 
 # Generate bytecode for trace_entry() with a pid filter.
 PLACEHOLDER_PID = 654321
@@ -103,6 +105,7 @@ bpf = BPF(
     )
 )
 trace_entry_pid_filter_bytecode = bpf.dump_func("trace_entry")
+bpf.cleanup() # Reset fds.
 
 trace_entry_code = generate_c_function(
     "generate_trace_entry", trace_entry_no_filter_bytecode
