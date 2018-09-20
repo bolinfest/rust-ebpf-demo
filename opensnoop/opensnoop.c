@@ -195,6 +195,7 @@ void parseArgs(int argc, char **argv) {
         fprintf(stderr, "Invalid value for -p: '%s'\n", optarg);
         exit(1);
       }
+      break;
 
     case 't':
       opt_tid = parseNonNegativeInteger(optarg);
@@ -202,6 +203,7 @@ void parseArgs(int argc, char **argv) {
         fprintf(stderr, "Invalid value for -t: '%s'\n", optarg);
         exit(1);
       }
+      break;
 
     case 'd':
       opt_duration = parseNonNegativeInteger(optarg);
@@ -209,6 +211,7 @@ void parseArgs(int argc, char **argv) {
         fprintf(stderr, "Invalid value for -d: '%s'\n", optarg);
         exit(1);
       }
+      break;
 
     case 'h':
       usage(stdout);
