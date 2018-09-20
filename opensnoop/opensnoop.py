@@ -107,6 +107,16 @@ trace_entry_pid_filter_bytecode = bpf.dump_func("trace_entry")
 trace_entry_code = generate_c_function(
     "generate_trace_entry", trace_entry_no_filter_bytecode
 )
+trace_entry_tid_code = generate_c_function(
+    "generate_trace_entry_tid",
+    trace_entry_tid_filter_bytecode,
+    placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
+)
+trace_entry_pid_code = generate_c_function(
+    "generate_trace_entry_pid",
+    trace_entry_pid_filter_bytecode,
+    placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
+)
 trace_return_code = generate_c_function(
     "generate_trace_return", trace_return_bytecode
 )
@@ -119,8 +129,13 @@ with open(generated_header, "w") as f:
 #include <stdlib.h>
 
 %s
-
 %s
-"""
-        % (trace_entry_code, trace_return_code)
+%s
+%s"""
+        % (
+            trace_entry_code,
+            trace_entry_tid_code,
+            trace_entry_pid_code,
+            trace_return_code,
+        )
     )

@@ -141,11 +141,14 @@ int getOnlineCpus(int **cpus, size_t *numCpu) {
   return 0;
 }
 
+// TODO: Support --timestamp.
 int opt_timestamp = 0;
 int opt_failed = 0;
 int opt_pid = -1;
 int opt_tid = -1;
+// TODO: Support --duration.
 int opt_duration = -1;
+// TODO: Support --name.
 char *opt_name = NULL;
 
 void usage(FILE *fd) {
@@ -227,7 +230,8 @@ void parseArgs(int argc, char **argv) {
 }
 
 void printHeader() {
-  printf("%-6s %-16s %4s %3s %s\n", "PID", "COMM", "FD", "ERR", "PATH");
+  printf("%-6s %-16s %4s %3s %s\n", opt_tid != -1 ? "TID" : "PID", "COMM", "FD",
+         "ERR", "PATH");
 }
 
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
@@ -310,8 +314,18 @@ int main(int argc, char **argv) {
 
   const char *prog_name_for_kprobe = "some kprobe";
   size_t trace_entry_size;
-  if (generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd) <
-      0) {
+  int generate_trace_rc;
+  if (opt_tid != -1) {
+    generate_trace_rc = generate_trace_entry_tid(
+        &trace_entry_insns, &trace_entry_size, opt_tid, hashMapFd);
+  } else if (opt_pid != -1) {
+    generate_trace_rc = generate_trace_entry_pid(
+        &trace_entry_insns, &trace_entry_size, opt_pid, hashMapFd);
+  } else {
+    generate_trace_rc =
+        generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd);
+  }
+  if (generate_trace_rc < 0) {
     goto error;
   }
 

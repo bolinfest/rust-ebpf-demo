@@ -218,11 +218,15 @@ def generate_c_function(fn_name, bytecode, placeholder=None):
             fd = imm
             fds.add(fd)
             imm = "fd%d" % fd
+        elif placeholder and imm == placeholder["imm"]:
+            imm = placeholder["param_name"]
         assigns.append(
             insn_assign_template % (index, opcode, dst_reg, src_reg, offset, imm)
         )
 
     sig = ""
+    if placeholder:
+        sig += ", %s %s" % (placeholder["param_type"], placeholder["param_name"])
     if fds:
         sorted_fds = list(fds)
         sorted_fds.sort()
