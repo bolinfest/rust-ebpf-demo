@@ -1,8 +1,7 @@
 /Cargo.lock
 /c/load-bpf
 /go/go
-/opensnoop/generated_trace_entry.h
-/opensnoop/generated_trace_return.h
+/opensnoop/generated_bytecode.h
 /opensnoop/opensnoop
 /target
 *.pyc

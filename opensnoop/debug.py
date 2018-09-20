@@ -177,3 +177,56 @@ struct bpf_insn %s[] = {
         opcode, dst_reg, src_reg, offset, imm = parse_instruction(instruction)
         f.write(bpf_insn_template % (opcode, dst_reg, src_reg, offset, imm))
     f.write("};\n")
+
+
+# Note imm is normally an integer, though
+# generate_c_function() has a special case
+# where it is a variable name.
+insn_assign_template = """\
+  *(*instructions + %d) = ((struct bpf_insn) {
+      .code    = 0x%x,
+      .dst_reg = BPF_REG_%d,
+      .src_reg = BPF_REG_%d,
+      .off     = %d,
+      .imm     = %s,
+  });
+"""
+
+c_function_template = """\
+int %s(struct bpf_insn **instructions, size_t *size%s) {
+  *size = %d * sizeof(struct bpf_insn);
+  *instructions = malloc(*size);
+  if (instructions == NULL) {
+    return -1;
+  }
+
+%s
+  return 0;
+}
+"""
+
+
+def generate_c_function(fn_name, bytecode, placeholder=None):
+    assigns = []
+    fds = set()
+    for index, instruction in get_list_of_instructions(bytecode):
+        opcode, dst_reg, src_reg, offset, imm = parse_instruction(instruction)
+        # I haven't found proper documentation for ld_pseudo, but I am basing
+        # this off of
+        # https://github.com/iovisor/bcc/blob/6ce918bd7030241f0598ee6b1107940bf8480085/src/cc/bcc_debug.cc#L53-L58
+        if opcode == 0x18 and src_reg == 1:
+            fd = imm
+            fds.add(fd)
+            imm = "fd%d" % fd
+        assigns.append(
+            insn_assign_template % (index, opcode, dst_reg, src_reg, offset, imm)
+        )
+
+    sig = ""
+    if fds:
+        sorted_fds = list(fds)
+        sorted_fds.sort()
+        params = [", int fd%d" % fd for fd in sorted_fds]
+        sig += "".join(params)
+    code = c_function_template % (fn_name, sig, len(assigns), "".join(assigns))
+    return code

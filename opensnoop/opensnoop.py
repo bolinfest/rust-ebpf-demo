@@ -7,10 +7,10 @@ from bcc import (
     DEBUG_SOURCE,
     DEBUG_BPF_REGISTER_STATE,
 )
-from debug import print_bpf_insns
+from debug import generate_c_function
 
 # define BPF program
-bpf_text = """
+bpf_text_template = """
 #include <uapi/linux/ptrace.h>
 #include <uapi/linux/limits.h>
 #include <linux/sched.h>
@@ -40,6 +40,7 @@ int trace_entry(struct pt_regs *ctx, int dfd, const char __user *filename)
     u32 pid = id >> 32; // PID is higher part
     u32 tid = id;       // Cast and get the lower part
 
+    FILTER
     if (bpf_get_current_comm(&val.comm, sizeof(val.comm)) == 0) {
         val.id = id;
         val.ts = bpf_ktime_get_ns();
@@ -76,15 +77,50 @@ int trace_return(struct pt_regs *ctx)
 }
 """
 
-b = BPF(text=bpf_text)
+# Generate bytecode for trace_entry() and trace_return() without
+# a filter.
+bpf = BPF(text=bpf_text_template.replace("FILTER", ""))
+generated_header = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "generated_bytecode.h"
+)
+trace_entry_no_filter_bytecode = bpf.dump_func("trace_entry")
+trace_return_bytecode = bpf.dump_func("trace_return")
 
-for fn in ["trace_entry", "trace_return"]:
-    bytecode = b.dump_func(fn)
-    with open(
-        os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), "generated_%s.h" % fn
-        ),
-        "w",
-    ) as f:
-        array_name = "%s_insns" % fn
-        print_bpf_insns(bytecode, array_name, f)
+# Generate bytecode for trace_entry() with a tid filter.
+PLACEHOLDER_TID = 123456
+bpf = BPF(
+    text=bpf_text_template.replace(
+        "FILTER", "if (tid != %d) { return 0; }" % PLACEHOLDER_TID
+    )
+)
+trace_entry_tid_filter_bytecode = bpf.dump_func("trace_entry")
+
+# Generate bytecode for trace_entry() with a pid filter.
+PLACEHOLDER_PID = 654321
+bpf = BPF(
+    text=bpf_text_template.replace(
+        "FILTER", "if (pid != %d) { return 0; }" % PLACEHOLDER_PID
+    )
+)
+trace_entry_pid_filter_bytecode = bpf.dump_func("trace_entry")
+
+trace_entry_code = generate_c_function(
+    "generate_trace_entry", trace_entry_no_filter_bytecode
+)
+trace_return_code = generate_c_function(
+    "generate_trace_return", trace_return_bytecode
+)
+
+with open(generated_header, "w") as f:
+    f.write(
+        """\
+// GENERATED FILE: See opensnoop.py.
+#include "libbpf_wrapper.h"
+#include <stdlib.h>
+
+%s
+
+%s
+"""
+        % (trace_entry_code, trace_return_code)
+    )

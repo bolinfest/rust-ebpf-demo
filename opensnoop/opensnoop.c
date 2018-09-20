@@ -1,5 +1,4 @@
-#include "generated_trace_entry.h"
-#include "generated_trace_return.h"
+#include "generated_bytecode.h"
 #include "libbpf_wrapper.h"
 #include <bcc/perf_reader.h>
 #include <errno.h>
@@ -250,6 +249,12 @@ void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
 int main(int argc, char **argv) {
   parseArgs(argc, argv);
 
+  bpf_log_buf[0] = '\0';
+  int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
+      returnProgFd, kretprobeFd;
+  struct perf_reader **readers = NULL;
+  struct bpf_insn *trace_entry_insns = NULL;
+  struct bpf_insn *trace_return_insns = NULL;
   int exitCode = 1;
   int *cpus = NULL;
   size_t numCpu = 0;
@@ -258,11 +263,10 @@ int main(int argc, char **argv) {
     goto error;
   }
 
-  bpf_log_buf[0] = '\0';
-  int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
-      returnProgFd, kretprobeFd;
-  struct perf_reader **readers = NULL;
   readers = malloc(numCpu * sizeof(struct perf_reader *));
+  if (readers == NULL) {
+    goto error;
+  }
 
   // On my system (Ubuntu 18.04.1 LTS), `uname -r` returns "4.15.0-33-generic".
   // KERNEL_VERSION(4, 15, 0) is 265984, but LINUX_VERSION_CODE is in
@@ -288,16 +292,6 @@ int main(int argc, char **argv) {
     goto error;
   }
 
-  // Note that we could update the BPF_LD_MAP_FD() instruction
-  // with the observed value if it is not 3, but then we have to
-  // modify the code generated from the Python script.
-  if (hashMapFd != 3) {
-    fprintf(stderr,
-            "Invariant violation: fd for BPF_HASH must be 3, but was %d.\n",
-            hashMapFd);
-    goto error;
-  }
-
   // BPF_PERF_OUTPUT
   const char *perfMapName = "perfMap name for debugging";
   eventsMapFd = bpf_create_map(BPF_MAP_TYPE_PERF_EVENT_ARRAY, perfMapName,
@@ -311,21 +305,16 @@ int main(int argc, char **argv) {
     goto error;
   }
 
-  // Note that we could update the BPF_LD_MAP_FD() instruction
-  // with the observed value if it is not 4, but then we have to
-  // modify the code generated from the Python script.
-  if (eventsMapFd != 4) {
-    fprintf(
-        stderr,
-        "Invariant violation: fd for BPF_PERF_OUTPUT must be 4, but was %d.\n",
-        eventsMapFd);
+  const char *prog_name_for_kprobe = "some kprobe";
+  size_t trace_entry_size;
+  if (generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd) <
+      0) {
     goto error;
   }
 
-  const char *prog_name_for_kprobe = "some kprobe";
   entryProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kprobe,
                               trace_entry_insns,
-                              /* prog_len */ sizeof(trace_entry_insns),
+                              /* prog_len */ trace_entry_size,
                               /* license */ "GPL", kern_version,
                               /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
   if (entryProgFd == -1) {
@@ -342,9 +331,15 @@ int main(int argc, char **argv) {
   }
 
   const char *prog_name_for_kretprobe = "some kretprobe";
+  size_t trace_return_size;
+  if (generate_trace_return(&trace_return_insns, &trace_return_size, hashMapFd,
+                            eventsMapFd) < 0) {
+    goto error;
+  }
+
   returnProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kretprobe,
                                trace_return_insns,
-                               /* prog_len */ sizeof(trace_return_insns),
+                               /* prog_len */ trace_return_size,
                                /* license */ "GPL", kern_version,
                                /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
   if (returnProgFd == -1) {
@@ -410,6 +405,14 @@ error:
   }
 
 cleanup:
+  // bytecode
+  if (trace_entry_insns != NULL) {
+    free(trace_entry_insns);
+  }
+  if (trace_return_insns != NULL) {
+    free(trace_return_insns);
+  }
+
   // readers
   if (readers != NULL) {
     for (int i = 0; i < numCpu; i++) {
