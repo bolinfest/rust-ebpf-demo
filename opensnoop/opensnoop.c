@@ -152,8 +152,32 @@ int opt_duration = -1;
 char *opt_name = NULL;
 
 void usage(FILE *fd) {
-  // TODO: Write usage string.
-  fprintf(fd, "Usage...\n");
+  fprintf(
+      fd,
+      "usage: opensnoop.py [-h] [-T] [-x] [-p PID] [-t TID] [-d DURATION] [-n "
+      "NAME]\n"
+      "\n"
+      "Trace open() syscalls\n"
+      "\n"
+      "optional arguments:\n"
+      "  -h, --help            show this help message and exit\n"
+      "  -T, --timestamp       include timestamp on output\n"
+      "  -x, --failed          only show failed opens\n"
+      "  -p PID, --pid PID     trace this PID only\n"
+      "  -t TID, --tid TID     trace this TID only\n"
+      "  -d DURATION, --duration DURATION\n"
+      "                        total duration of trace in seconds\n"
+      "  -n NAME, --name NAME  only print process names containing this name\n"
+      "\n"
+      "examples:\n"
+      "    ./opensnoop           # trace all open() syscalls\n"
+      "    ./opensnoop -T        # include timestamps\n"
+      "    ./opensnoop -x        # only show failed opens\n"
+      "    ./opensnoop -p 181    # only trace PID 181\n"
+      "    ./opensnoop -t 123    # only trace TID 123\n"
+      "    ./opensnoop -d 10     # trace for 10 seconds only\n"
+      "    ./opensnoop -n main   # only print process names containing "
+      "\"main\"\n");
 }
 
 void parseArgs(int argc, char **argv) {
