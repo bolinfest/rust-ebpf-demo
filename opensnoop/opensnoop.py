@@ -65,7 +65,7 @@ int trace_return(struct pt_regs *ctx)
     bpf_probe_read(&data.comm, sizeof(data.comm), valp->comm);
     bpf_probe_read(&data.fname, sizeof(data.fname), (void *)valp->fname);
     data.id = valp->id;
-    data.ts = tsp / 1000;
+    data.ts = tsp;
     data.ret = PT_REGS_RC(ctx);
 
     events.perf_submit(ctx, &data, sizeof(data));

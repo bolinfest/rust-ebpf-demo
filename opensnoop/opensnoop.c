@@ -265,6 +265,7 @@ void printHeader() {
 }
 
 long long initialTimestamp = 0;
+const float NANOS_PER_SECOND = 1000000000;
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   struct data_t *event = (struct data_t *)raw;
   if (opt_failed && event->ret >= 0) {
@@ -290,7 +291,7 @@ void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
     }
 
     long long delta = event->ts - initialTimestamp;
-    printf("%-14.9f", ((float) delta) / 1000000);
+    printf("%-14.9f", delta / NANOS_PER_SECOND);
   }
 
   int pid = event->id >> 32;
