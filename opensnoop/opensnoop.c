@@ -29,7 +29,6 @@ char bpf_log_buf[LOG_BUF_SIZE];
 
 struct val_t {
   __u64 id;
-  __u64 ts;
   char comm[TASK_COMM_LEN];
   const char *fname;
 };
