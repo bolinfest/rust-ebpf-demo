@@ -148,7 +148,6 @@ int opt_failed = 0;
 int opt_pid = -1;
 int opt_tid = -1;
 int opt_duration = -1;
-// TODO: Support --name.
 char *opt_name = NULL;
 
 void usage(FILE *fd) {
@@ -240,6 +239,16 @@ void parseArgs(int argc, char **argv) {
       }
       break;
 
+    case 'n':
+      opt_name = malloc(strlen(optarg) + 1);
+      if (opt_name == NULL) {
+        perror("Failed to malloc for -n argument.");
+        exit(1);
+      }
+
+      strcpy(opt_name, optarg);
+      break;
+
     case 'h':
       usage(stdout);
       exit(0);
@@ -261,6 +270,10 @@ void printHeader() {
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   struct data_t *event = (struct data_t *)raw;
   if (opt_failed && event->ret >= 0) {
+    return;
+  }
+
+  if (opt_name != NULL && strstr(event->comm, opt_name) == NULL) {
     return;
   }
 
@@ -514,6 +527,11 @@ cleanup:
   // cpus array allocated by getOnlineCpus().
   if (cpus != NULL) {
     free(cpus);
+  }
+
+  // flags
+  if (opt_name != NULL) {
+    free(opt_name);
   }
 
   return exitCode;
