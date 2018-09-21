@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 // This seems like it should be in <linux/sched.h>,
@@ -146,7 +147,6 @@ int opt_timestamp = 0;
 int opt_failed = 0;
 int opt_pid = -1;
 int opt_tid = -1;
-// TODO: Support --duration.
 int opt_duration = -1;
 // TODO: Support --name.
 char *opt_name = NULL;
@@ -422,11 +422,34 @@ int main(int argc, char **argv) {
     }
   }
 
-  printHeader();
+  struct timespec currentTime, endTime;
+  long long targetTimeNs;
+  if (opt_duration != -1) {
+    if (clock_gettime(CLOCK_MONOTONIC_COARSE, &endTime) < 0) {
+      perror("Error calling clock_gettime()");
+      goto error;
+    }
 
+    endTime.tv_sec += opt_duration;
+  }
+
+  printHeader();
   // Loop and call perf_buffer_poll(), which has the side-effect of calling
   // perf_reader_raw_callback() on new events.
   while (1) {
+    if (opt_duration != -1) {
+      if (clock_gettime(CLOCK_MONOTONIC_COARSE, &currentTime) < 0) {
+        perror("Error calling clock_gettime()");
+        goto error;
+      }
+
+      if (currentTime.tv_sec > endTime.tv_sec ||
+          (currentTime.tv_sec == endTime.tv_sec &&
+           currentTime.tv_nsec >= endTime.tv_nsec)) {
+        break;
+      }
+    }
+
     // From the implementation, this always appear to return 0.
     int rc = perf_reader_poll(numCpu, readers, -1);
     if (rc != 0) {
