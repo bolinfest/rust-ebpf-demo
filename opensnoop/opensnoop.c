@@ -142,7 +142,6 @@ int getOnlineCpus(int **cpus, size_t *numCpu) {
   return 0;
 }
 
-// TODO: Support --timestamp.
 int opt_timestamp = 0;
 int opt_failed = 0;
 int opt_pid = -1;
@@ -185,7 +184,7 @@ void parseArgs(int argc, char **argv) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
 
-        {"timestamp", required_argument, 0, 'T'},
+        {"timestamp", no_argument, 0, 'T'},
         {"failed", no_argument, 0, 'x'},
         {"pid", required_argument, 0, 'p'},
         {"tid", required_argument, 0, 't'},
@@ -193,7 +192,7 @@ void parseArgs(int argc, char **argv) {
         {"name", required_argument, 0, 'n'},
         {0, 0, 0, 0}};
     int option_index = 0;
-    c = getopt_long(argc, argv, "hT:xp:t:d:n:", long_options, &option_index);
+    c = getopt_long(argc, argv, "hTxp:t:d:n:", long_options, &option_index);
     if (c == -1) {
       break;
     }
@@ -204,11 +203,7 @@ void parseArgs(int argc, char **argv) {
       break;
 
     case 'T':
-      opt_timestamp = parseNonNegativeInteger(optarg);
-      if (opt_timestamp == -1) {
-        fprintf(stderr, "Invalid value for -T: '%s'\n", optarg);
-        exit(1);
-      }
+      opt_timestamp = 1;
       break;
 
     case 'x':
@@ -263,10 +258,14 @@ void parseArgs(int argc, char **argv) {
 }
 
 void printHeader() {
+  if (opt_timestamp) {
+    printf("%-14s", "TIME(s)");
+  }
   printf("%-6s %-16s %4s %3s %s\n", opt_tid != -1 ? "TID" : "PID", "COMM", "FD",
          "ERR", "PATH");
 }
 
+long long initialTimestamp = 0;
 void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   struct data_t *event = (struct data_t *)raw;
   if (opt_failed && event->ret >= 0) {
@@ -284,6 +283,15 @@ void perf_reader_raw_callback(void *cb_cookie, void *raw, int raw_size) {
   } else {
     fd_s = -1;
     err = -event->ret;
+  }
+
+  if (opt_timestamp) {
+    if (initialTimestamp == 0) {
+      initialTimestamp = event->ts;
+    }
+
+    long long delta = event->ts - initialTimestamp;
+    printf("%-14.9f", ((float) delta) / 1000000);
   }
 
   int pid = event->id >> 32;
