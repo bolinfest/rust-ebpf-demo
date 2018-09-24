@@ -126,7 +126,7 @@ with open(generated_header, "w") as f:
     f.write(
         """\
 // GENERATED FILE: See opensnoop.py.
-#include "libbpf_wrapper.h"
+#include <bcc/libbpf.h>
 #include <stdlib.h>
 
 %s

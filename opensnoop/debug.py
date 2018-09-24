@@ -166,7 +166,7 @@ def print_bpf_insns(bytecode, array_name, f):
     f.write(
         """\
 // GENERATED FILE: See opensnoop.py.
-#include "libbpf_wrapper.h"
+#include <bcc/libbpf.h>
 
 struct bpf_insn %s[] = {
 """

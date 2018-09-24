@@ -1,5 +1,5 @@
 #include "generated_bytecode.h"
-#include "libbpf_wrapper.h"
+#include <bcc/libbpf.h>
 #include <bcc/perf_reader.h>
 #include <errno.h>
 #include <fcntl.h>
