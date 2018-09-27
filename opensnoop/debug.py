@@ -183,25 +183,18 @@ struct bpf_insn %s[] = {
 # generate_c_function() has a special case
 # where it is a variable name.
 insn_assign_template = """\
-  *(*instructions + %d) = ((struct bpf_insn) {
+  instructions[%d] = (struct bpf_insn) {
       .code    = 0x%x,
       .dst_reg = BPF_REG_%d,
       .src_reg = BPF_REG_%d,
       .off     = %d,
       .imm     = %s,
-  });
+  };
 """
 
 c_function_template = """\
-int %s(struct bpf_insn **instructions, size_t *size%s) {
-  *size = %d * sizeof(struct bpf_insn);
-  *instructions = malloc(*size);
-  if (instructions == NULL) {
-    return -1;
-  }
-
+void %s(struct bpf_insn instructions[]%s) {
 %s
-  return 0;
 }
 
 """
@@ -233,5 +226,5 @@ def generate_c_function(fn_name, bytecode, placeholder=None):
         sorted_fds.sort()
         params = [", int fd%d" % fd for fd in sorted_fds]
         sig += "".join(params)
-    code = c_function_template % (fn_name, sig, len(assigns), "".join(assigns))
+    code = c_function_template % (fn_name, sig, "".join(assigns))
     return code

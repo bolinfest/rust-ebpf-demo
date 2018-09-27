@@ -279,8 +279,6 @@ int main(int argc, char **argv) {
   int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
       returnProgFd, kretprobeFd;
   struct perf_reader **readers = NULL;
-  struct bpf_insn *trace_entry_insns = NULL;
-  struct bpf_insn *trace_return_insns = NULL;
   int exitCode = 1;
   int *cpus = NULL;
   size_t numCpu = 0;
@@ -332,27 +330,24 @@ int main(int argc, char **argv) {
   }
 
   const char *prog_name_for_kprobe = "some kprobe";
-  size_t trace_entry_size;
-  int generate_trace_rc;
+  int numTraceEntryInstructions;
+  struct bpf_insn trace_entry_insns[MAX_NUM_TRACE_ENTRY_INSTRUCTIONS];
   if (opt_tid != -1) {
-    generate_trace_rc = generate_trace_entry_tid(
-        &trace_entry_insns, &trace_entry_size, opt_tid, hashMapFd);
+    generate_trace_entry_tid(trace_entry_insns, opt_tid, hashMapFd);
+    numTraceEntryInstructions = NUM_TRACE_ENTRY_TID_INSTRUCTIONS;
   } else if (opt_pid != -1) {
-    generate_trace_rc = generate_trace_entry_pid(
-        &trace_entry_insns, &trace_entry_size, opt_pid, hashMapFd);
+    generate_trace_entry_pid(trace_entry_insns, opt_pid, hashMapFd);
+    numTraceEntryInstructions = NUM_TRACE_ENTRY_PID_INSTRUCTIONS;
   } else {
-    generate_trace_rc =
-        generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd);
-  }
-  if (generate_trace_rc < 0) {
-    goto error;
+    numTraceEntryInstructions = NUM_TRACE_ENTRY_INSTRUCTIONS;
+    generate_trace_entry(trace_entry_insns, hashMapFd);
   }
 
-  entryProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kprobe,
-                              trace_entry_insns,
-                              /* prog_len */ trace_entry_size,
-                              /* license */ "GPL", kern_version,
-                              /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
+  entryProgFd = bpf_prog_load(
+      BPF_PROG_TYPE_KPROBE, prog_name_for_kprobe, trace_entry_insns,
+      /* prog_len */ numTraceEntryInstructions * sizeof(struct bpf_insn),
+      /* license */ "GPL", kern_version,
+      /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
   if (entryProgFd == -1) {
     perror("Error calling bpf_prog_load() for kretprobe");
     goto error;
@@ -367,17 +362,14 @@ int main(int argc, char **argv) {
   }
 
   const char *prog_name_for_kretprobe = "some kretprobe";
-  size_t trace_return_size;
-  if (generate_trace_return(&trace_return_insns, &trace_return_size, hashMapFd,
-                            eventsMapFd) < 0) {
-    goto error;
-  }
+  struct bpf_insn trace_return_insns[NUM_TRACE_RETURN_INSTRUCTIONS];
+  generate_trace_return(trace_return_insns, hashMapFd, eventsMapFd);
 
-  returnProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kretprobe,
-                               trace_return_insns,
-                               /* prog_len */ trace_return_size,
-                               /* license */ "GPL", kern_version,
-                               /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
+  returnProgFd = bpf_prog_load(
+      BPF_PROG_TYPE_KPROBE, prog_name_for_kretprobe, trace_return_insns,
+      /* prog_len */ NUM_TRACE_RETURN_INSTRUCTIONS * sizeof(struct bpf_insn),
+      /* license */ "GPL", kern_version,
+      /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
   if (returnProgFd == -1) {
     perror("Error calling bpf_prog_load() for kretprobe");
     goto error;
@@ -464,14 +456,6 @@ error:
   }
 
 cleanup:
-  // bytecode
-  if (trace_entry_insns != NULL) {
-    free(trace_entry_insns);
-  }
-  if (trace_return_insns != NULL) {
-    free(trace_return_insns);
-  }
-
   // readers
   if (readers != NULL) {
     for (int i = 0; i < numCpu; i++) {
