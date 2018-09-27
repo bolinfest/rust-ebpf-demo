@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
    *   __s32 imm;       // signed immediate constant
    * };
    */
-  struct bpf_insn instruction = ((struct bpf_insn){
+  struct bpf_insn instruction = (struct bpf_insn){
       .code = 0x18,
       // Note that if you try to change this to 0x1e, you will
       // get a compilation warning:
@@ -35,7 +35,19 @@ int main(int argc, char **argv) {
       .src_reg = 0x07,
       .off = 0xcafe,
       .imm = 0x72206d6f,
-  });
+  };
 
   fwrite(&instruction, sizeof(instruction), 1, stdout);
+
+  // struct example {
+  //   char f1 : 3;
+  //   char f2 : 3;
+  //   __u8 f3 : 2;
+  // };
+  // struct example ex = (struct example){
+  //     .f1 = -1,
+  //     .f2 = 2,
+  //     .f3 = 3,
+  // };
+  // fwrite(&ex, sizeof(ex), 1, stdout);
 }
