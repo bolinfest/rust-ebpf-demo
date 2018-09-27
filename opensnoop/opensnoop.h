@@ -13,14 +13,14 @@
 #define NAME_MAX 255
 
 struct val_t {
-  __u64 id;
+  unsigned long long id;
   char comm[TASK_COMM_LEN];
   const char *fname;
 };
 
 struct data_t {
-  __u64 id;
-  __u64 ts;
+  unsigned long long id;
+  unsigned long long ts;
   int ret;
   char comm[TASK_COMM_LEN];
   char fname[NAME_MAX];
