@@ -2,6 +2,12 @@
 #include <bcc/libbpf.h>
 #include <stdlib.h>
 
+#define MAX_NUM_TRACE_ENTRY_INSTRUCTIONS 35
+#define NUM_TRACE_ENTRY_INSTRUCTIONS 28
+#define NUM_TRACE_ENTRY_TID_INSTRUCTIONS 32
+#define NUM_TRACE_ENTRY_PID_INSTRUCTIONS 35
+#define NUM_TRACE_RETURN_INSTRUCTIONS 82
+
 int generate_trace_entry(struct bpf_insn **instructions, size_t *size, int fd3) {
   *size = 28 * sizeof(struct bpf_insn);
   *instructions = malloc(*size);

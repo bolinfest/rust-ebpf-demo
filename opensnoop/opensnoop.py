@@ -63,10 +63,15 @@ int trace_return(struct pt_regs *ctx)
 
 
 def gen_c(name, bpf_fn, filter_value="", placeholder=None):
+    """Returns the C code for the function and the number of instructions in
+    the array the C function generates."""
     bpf = BPF(text=bpf_text_template.replace("FILTER", filter_value))
     bytecode = bpf.dump_func(bpf_fn)
     bpf.cleanup()  # Reset fds before next BPF is created.
-    return generate_c_function(name, bytecode, placeholder=placeholder)
+    return (
+        generate_c_function(name, bytecode, placeholder=placeholder),
+        len(bytecode) / 8,
+    )
 
 
 PLACEHOLDER_TID = 123456
@@ -75,27 +80,47 @@ PLACEHOLDER_PID = 654321
 # Note that we cannot call gen_c() while another file is open
 # (such as generated_bytecode.h) or else it will throw off the
 # file descriptor numbers in the generated code.
+entry, entry_size = gen_c("generate_trace_entry", "trace_entry")
+entry_tid, entry_tid_size = gen_c(
+    "generate_trace_entry_tid",
+    "trace_entry",
+    filter_value="if (tid != %d) { return 0; }" % PLACEHOLDER_TID,
+    placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
+)
+entry_pid, entry_pid_size = gen_c(
+    "generate_trace_entry_pid",
+    "trace_entry",
+    filter_value="if (pid != %d) { return 0; }" % PLACEHOLDER_PID,
+    placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
+)
+ret, ret_size = gen_c("generate_trace_return", "trace_return")
+
 c_file = (
-    """\
+    (
+        """\
 // GENERATED FILE: See opensnoop.py.
 #include <bcc/libbpf.h>
 #include <stdlib.h>
 
+#define MAX_NUM_TRACE_ENTRY_INSTRUCTIONS %d
+#define NUM_TRACE_ENTRY_INSTRUCTIONS %d
+#define NUM_TRACE_ENTRY_TID_INSTRUCTIONS %d
+#define NUM_TRACE_ENTRY_PID_INSTRUCTIONS %d
+#define NUM_TRACE_RETURN_INSTRUCTIONS %d
+
 """
-    + gen_c("generate_trace_entry", "trace_entry")
-    + gen_c(
-        "generate_trace_entry_tid",
-        "trace_entry",
-        filter_value="if (tid != %d) { return 0; }" % PLACEHOLDER_TID,
-        placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
+        % (
+            max(entry_size, entry_tid_size, entry_pid_size),
+            entry_size,
+            entry_tid_size,
+            entry_pid_size,
+            ret_size,
+        )
     )
-    + gen_c(
-        "generate_trace_entry_pid",
-        "trace_entry",
-        filter_value="if (pid != %d) { return 0; }" % PLACEHOLDER_PID,
-        placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
-    )
-    + gen_c("generate_trace_return", "trace_return")
+    + entry
+    + entry_tid
+    + entry_pid
+    + ret
 )
 
 __dir = os.path.dirname(os.path.realpath(__file__))
