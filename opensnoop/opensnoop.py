@@ -1,6 +1,5 @@
 import os
 from bcc import (
-    ArgString,
     BPF,
     DEBUG_LLVM_IR,
     DEBUG_PREPROCESSOR,
@@ -63,59 +62,45 @@ int trace_return(struct pt_regs *ctx)
 """
 
 
-def gen_bytecode(fn_name, filter_value=""):
+def gen_c(name, bpf_fn, filter_value="", placeholder=None):
     bpf = BPF(text=bpf_text_template.replace("FILTER", filter_value))
-    bytecode = bpf.dump_func(fn_name)
+    bytecode = bpf.dump_func(bpf_fn)
     bpf.cleanup()  # Reset fds before next BPF is created.
-    return bytecode
+    return generate_c_function(name, bytecode, placeholder=placeholder)
 
-
-trace_entry_no_filter_bytecode = gen_bytecode("trace_entry")
-trace_return_bytecode = gen_bytecode("trace_return")
 
 PLACEHOLDER_TID = 123456
-trace_entry_tid_filter_bytecode = gen_bytecode(
-    "trace_entry", "if (tid != %d) { return 0; }" % PLACEHOLDER_TID
-)
-
 PLACEHOLDER_PID = 654321
-trace_entry_pid_filter_bytecode = gen_bytecode(
-    "trace_entry", "if (pid != %d) { return 0; }" % PLACEHOLDER_PID
-)
 
-trace_entry_code = generate_c_function(
-    "generate_trace_entry", trace_entry_no_filter_bytecode
-)
-trace_entry_tid_code = generate_c_function(
-    "generate_trace_entry_tid",
-    trace_entry_tid_filter_bytecode,
-    placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
-)
-trace_entry_pid_code = generate_c_function(
-    "generate_trace_entry_pid",
-    trace_entry_pid_filter_bytecode,
-    placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
-)
-trace_return_code = generate_c_function("generate_trace_return", trace_return_bytecode)
-
-generated_header = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)), "generated_bytecode.h"
-)
-with open(generated_header, "w") as f:
-    f.write(
-        """\
+# Note that we cannot call gen_c() while another file is open
+# (such as generated_bytecode.h) or else it will throw off the
+# file descriptor numbers in the generated code.
+c_file = (
+    """\
 // GENERATED FILE: See opensnoop.py.
 #include <bcc/libbpf.h>
 #include <stdlib.h>
 
-%s
-%s
-%s
-%s"""
-        % (
-            trace_entry_code,
-            trace_entry_tid_code,
-            trace_entry_pid_code,
-            trace_return_code,
-        )
+"""
+    + gen_c("generate_trace_entry", "trace_entry")
+    + "\n"
+    + gen_c(
+        "generate_trace_entry_tid",
+        "trace_entry",
+        filter_value="if (tid != %d) { return 0; }" % PLACEHOLDER_TID,
+        placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
     )
+    + "\n"
+    + gen_c(
+        "generate_trace_entry_pid",
+        "trace_entry",
+        filter_value="if (pid != %d) { return 0; }" % PLACEHOLDER_PID,
+        placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
+    )
+    + "\n"
+    + gen_c("generate_trace_return", "trace_return")
+)
+
+__dir = os.path.dirname(os.path.realpath(__file__))
+with open(os.path.join(__dir, "generated_bytecode.h"), "w") as f:
+    f.write(c_file)
