@@ -1,3 +1,4 @@
+/.vscode/
 /Cargo.lock
 /c/load-bpf
 /go/go
