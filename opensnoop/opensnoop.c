@@ -1,5 +1,5 @@
-#include "generated_bytecode.h"
 #include "opensnoop.h"
+#include "generated_bytecode.h"
 #include <bcc/libbpf.h>
 #include <bcc/perf_reader.h>
 #include <errno.h>
@@ -12,7 +12,6 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-
 
 #define LOG_BUF_SIZE 65536
 
