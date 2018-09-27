@@ -97,19 +97,18 @@ trace_entry_pid_filter_bytecode = gen_bytecode(
 )
 
 trace_entry_code = generate_c_function(
-    "generate_trace_entry", trace_entry_no_filter_bytecode
+    "generate_trace_entry", trace_return_bytecode + trace_entry_no_filter_bytecode
 )
 trace_entry_tid_code = generate_c_function(
     "generate_trace_entry_tid",
-    trace_entry_tid_filter_bytecode,
+    trace_return_bytecode + trace_entry_tid_filter_bytecode,
     placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
 )
 trace_entry_pid_code = generate_c_function(
     "generate_trace_entry_pid",
-    trace_entry_pid_filter_bytecode,
+    trace_return_bytecode + trace_entry_pid_filter_bytecode,
     placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
 )
-trace_return_code = generate_c_function("generate_trace_return", trace_return_bytecode)
 
 generated_header = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "generated_bytecode.h"
@@ -121,14 +120,15 @@ with open(generated_header, "w") as f:
 #include <bcc/libbpf.h>
 #include <stdlib.h>
 
-%s
+#define TRACE_RETURN_NUM_INSTRUCTIONS %d
+
 %s
 %s
 %s"""
         % (
+            len(trace_return_bytecode) / 8,
             trace_entry_code,
             trace_entry_tid_code,
             trace_entry_pid_code,
-            trace_return_code,
         )
     )

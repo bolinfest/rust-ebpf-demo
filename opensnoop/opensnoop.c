@@ -303,7 +303,7 @@ int main(int argc, char **argv) {
 
   bpf_log_buf[0] = '\0';
   int hashMapFd = -1, eventsMapFd = -1, entryProgFd = -1, kprobeFd = -1,
-      returnProgFd, kretprobeFd;
+      /*returnProgFd,*/ kretprobeFd;
   struct perf_reader **readers = NULL;
   struct bpf_insn *trace_entry_insns = NULL;
   struct bpf_insn *trace_return_insns = NULL;
@@ -362,13 +362,13 @@ int main(int argc, char **argv) {
   int generate_trace_rc;
   if (opt_tid != -1) {
     generate_trace_rc = generate_trace_entry_tid(
-        &trace_entry_insns, &trace_entry_size, opt_tid, hashMapFd);
+        &trace_entry_insns, &trace_entry_size, opt_tid, hashMapFd, eventsMapFd);
   } else if (opt_pid != -1) {
     generate_trace_rc = generate_trace_entry_pid(
-        &trace_entry_insns, &trace_entry_size, opt_pid, hashMapFd);
+        &trace_entry_insns, &trace_entry_size, opt_pid, hashMapFd, eventsMapFd);
   } else {
     generate_trace_rc =
-        generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd);
+        generate_trace_entry(&trace_entry_insns, &trace_entry_size, hashMapFd, eventsMapFd);
   }
   if (generate_trace_rc < 0) {
     goto error;
@@ -386,30 +386,30 @@ int main(int argc, char **argv) {
 
   kprobeFd = bpf_attach_kprobe(entryProgFd, BPF_PROBE_ENTRY, "p_do_sys_open",
                                "do_sys_open",
-                               /* fn_offset */ 0);
+                               /* fn_offset */ TRACE_RETURN_NUM_INSTRUCTIONS);
   if (kprobeFd < 0) {
     perror("Error calling bpf_attach_kprobe() for kprobe");
     goto error;
   }
 
-  const char *prog_name_for_kretprobe = "some kretprobe";
-  size_t trace_return_size;
-  if (generate_trace_return(&trace_return_insns, &trace_return_size, hashMapFd,
-                            eventsMapFd) < 0) {
-    goto error;
-  }
+  // const char *prog_name_for_kretprobe = "some kretprobe";
+  // size_t trace_return_size;
+  // if (generate_trace_return(&trace_return_insns, &trace_return_size, hashMapFd,
+  //                           eventsMapFd) < 0) {
+  //   goto error;
+  // }
 
-  returnProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kretprobe,
-                               trace_return_insns,
-                               /* prog_len */ trace_return_size,
-                               /* license */ "GPL", kern_version,
-                               /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
-  if (returnProgFd == -1) {
-    perror("Error calling bpf_prog_load() for kretprobe");
-    goto error;
-  }
+  // returnProgFd = bpf_prog_load(BPF_PROG_TYPE_KPROBE, prog_name_for_kretprobe,
+  //                              trace_return_insns,
+  //                              /* prog_len */ trace_return_size,
+  //                              /* license */ "GPL", kern_version,
+  //                              /* log_level */ 1, bpf_log_buf, LOG_BUF_SIZE);
+  // if (returnProgFd == -1) {
+  //   perror("Error calling bpf_prog_load() for kretprobe");
+  //   goto error;
+  // }
 
-  kretprobeFd = bpf_attach_kprobe(returnProgFd, BPF_PROBE_RETURN,
+  kretprobeFd = bpf_attach_kprobe(entryProgFd, BPF_PROBE_RETURN,
                                   "r_do_sys_open", "do_sys_open",
                                   /* fn_offset */ 0);
   if (kretprobeFd < 0) {
@@ -520,9 +520,9 @@ cleanup:
   if (kretprobeFd != -1) {
     close(kretprobeFd);
   }
-  if (returnProgFd != -1) {
-    close(returnProgFd);
-  }
+  // if (returnProgFd != -1) {
+  //   close(returnProgFd);
+  // }
 
   // maps
   if (eventsMapFd != -1) {
