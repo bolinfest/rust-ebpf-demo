@@ -1284,3 +1284,4 @@ int generate_trace_return(struct bpf_insn **instructions, size_t *size, int fd3,
 
   return 0;
 }
+

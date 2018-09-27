@@ -83,21 +83,18 @@ c_file = (
 
 """
     + gen_c("generate_trace_entry", "trace_entry")
-    + "\n"
     + gen_c(
         "generate_trace_entry_tid",
         "trace_entry",
         filter_value="if (tid != %d) { return 0; }" % PLACEHOLDER_TID,
         placeholder={"param_type": "int", "param_name": "tid", "imm": PLACEHOLDER_TID},
     )
-    + "\n"
     + gen_c(
         "generate_trace_entry_pid",
         "trace_entry",
         filter_value="if (pid != %d) { return 0; }" % PLACEHOLDER_PID,
         placeholder={"param_type": "int", "param_name": "pid", "imm": PLACEHOLDER_PID},
     )
-    + "\n"
     + gen_c("generate_trace_return", "trace_return")
 )
 

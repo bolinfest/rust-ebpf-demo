@@ -203,6 +203,7 @@ int %s(struct bpf_insn **instructions, size_t *size%s) {
 %s
   return 0;
 }
+
 """
 
 
