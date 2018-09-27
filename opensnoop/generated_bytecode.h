@@ -205,7 +205,6 @@ void generate_trace_entry(struct bpf_insn instructions[], int fd3) {
       .off     = 0,
       .imm     = 0,
   };
-
 }
 
 void generate_trace_entry_tid(struct bpf_insn instructions[], int tid, int fd3) {
@@ -433,7 +432,6 @@ void generate_trace_entry_tid(struct bpf_insn instructions[], int tid, int fd3) 
       .off     = 0,
       .imm     = 0,
   };
-
 }
 
 void generate_trace_entry_pid(struct bpf_insn instructions[], int pid, int fd3) {
@@ -682,7 +680,6 @@ void generate_trace_entry_pid(struct bpf_insn instructions[], int pid, int fd3) 
       .off     = 0,
       .imm     = 0,
   };
-
 }
 
 void generate_trace_return(struct bpf_insn instructions[], int fd3, int fd4) {
@@ -1260,6 +1257,5 @@ void generate_trace_return(struct bpf_insn instructions[], int fd3, int fd4) {
       .off     = 0,
       .imm     = 0,
   };
-
 }
 

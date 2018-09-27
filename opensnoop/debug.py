@@ -194,8 +194,7 @@ insn_assign_template = """\
 
 c_function_template = """\
 void %s(struct bpf_insn instructions[]%s) {
-%s
-}
+%s}
 
 """
 
