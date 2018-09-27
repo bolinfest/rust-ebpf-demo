@@ -13,8 +13,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOG_BUF_SIZE 65536
-
 char bpf_log_buf[LOG_BUF_SIZE];
 
 /**
