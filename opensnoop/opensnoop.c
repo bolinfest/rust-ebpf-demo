@@ -1,4 +1,5 @@
 #include "generated_bytecode.h"
+#include "opensnoop.h"
 #include <bcc/libbpf.h>
 #include <bcc/perf_reader.h>
 #include <errno.h>
@@ -12,34 +13,10 @@
 #include <time.h>
 #include <unistd.h>
 
-// This seems like it should be in <linux/sched.h>,
-// but I don't have it there on Ubuntu 18.04.
-#ifndef TASK_COMM_LEN
-// Task command name length:
-#define TASK_COMM_LEN 16
-#endif
-
-// These constants and structs must match those
-// used in the source in opensnoop.py.
 
 #define LOG_BUF_SIZE 65536
-#define NAME_MAX 255
 
 char bpf_log_buf[LOG_BUF_SIZE];
-
-struct val_t {
-  __u64 id;
-  char comm[TASK_COMM_LEN];
-  const char *fname;
-};
-
-struct data_t {
-  __u64 id;
-  __u64 ts;
-  int ret;
-  char comm[TASK_COMM_LEN];
-  char fname[NAME_MAX];
-};
 
 /**
  * If a positive integer is parsed successfully, returns the value.

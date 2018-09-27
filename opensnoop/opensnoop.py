@@ -14,20 +14,7 @@ bpf_text_template = """
 #include <uapi/linux/ptrace.h>
 #include <uapi/linux/limits.h>
 #include <linux/sched.h>
-
-struct val_t {
-    u64 id;
-    char comm[TASK_COMM_LEN];
-    const char *fname;
-};
-
-struct data_t {
-    u64 id;
-    u64 ts;
-    int ret;
-    char comm[TASK_COMM_LEN];
-    char fname[NAME_MAX];
-};
+#include "opensnoop.h"
 
 BPF_HASH(infotmp, u64, struct val_t);
 BPF_PERF_OUTPUT(events);
